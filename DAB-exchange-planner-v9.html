@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAB Exchange Planner | V9</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        .view-hidden { display: none !important; }
+
+        /* Map Styles */
+        .custom-marker {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            border: 2px solid white; font-weight: bold;
+            background-size: cover; background-position: center;
+        }
+        .custom-marker:hover { transform: scale(1.3) translateY(-5px); z-index: 1000 !important; box-shadow: 0 8px 16px rgba(0,0,0,0.5); }
+        .map-crosshair { cursor: crosshair !important; }
+
+        /* Leaflet Popup customization */
+        .leaflet-popup-content-wrapper { padding: 0 !important; border-radius: 12px !important; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important; }
+        .leaflet-popup-content { margin: 0 !important; width: auto !important; text-align: center; font-family: 'Noto Sans TC', sans-serif; }
+        .leaflet-popup-tip-container { display: none; } /* Hide the pointer tip for cleaner hover */
+
+        /* Modal Styles */
+        .modal-backdrop {
+            background-color: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Faded text animation for landing */
+        @keyframes subtleFade {
+            0% { opacity: 0.3; transform: scale(0.98); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+            100% { opacity: 0.3; transform: scale(0.98); }
+        }
+        .faded-title { animation: subtleFade 4s infinite ease-in-out; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col text-slate-800 relative bg-slate-950">
+
+    <!-- ==================== VIEW 1: LANDING SLIDE ==================== -->
+    <div id="landing-view" class="fixed inset-0 z-[5000] bg-slate-900 flex flex-col items-center justify-center transition-opacity duration-1000 cursor-pointer">
+        <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000')] bg-cover bg-center grayscale blur-[2px] opacity-40 mix-blend-luminosity"></div>
+        <div class="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-slate-900/80 to-slate-950"></div>
+        
+        <div class="z-10 px-4 text-center">
+            <h1 class="text-4xl md:text-6xl lg:text-8xl font-black text-white tracking-[0.15em] uppercase drop-shadow-2xl faded-title">
+                DAB Exchange Planner
+            </h1>
+            <div class="h-1 w-24 bg-indigo-500 mx-auto mt-8 rounded-full opacity-50"></div>
+        </div>
+        <p class="absolute bottom-16 z-10 text-white/50 tracking-widest text-sm md:text-base animate-bounce uppercase font-bold" id="landing-press-text">
+            — Press Any Key or Click to Start —
+        </p>
+    </div>
+
+    <!-- Global App Navbar -->
+    <nav id="app-nav" class="fixed top-0 w-full bg-slate-950/30 backdrop-blur-md border-b border-white/10 px-6 py-4 flex justify-between items-center z-[100] view-hidden transition-all duration-500">
+        <div class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition" onclick="showDashboard()">
+            <div class="bg-indigo-600 text-white w-10 h-10 flex items-center justify-center rounded-xl shadow-lg border border-white/10">
+                <i class="fa-solid fa-earth-asia"></i>
+            </div>
+            <span class="font-bold text-lg md:text-xl tracking-wide text-white drop-shadow-md">DAB Exchange Planner</span>
+        </div>
+        <div class="flex items-center gap-5">
+            <div class="flex items-center gap-4 mr-2 border-r border-white/20 pr-5">
+                <div class="flex items-center gap-2 text-white/80 hover:text-white transition group cursor-help" title="Total Maps / 規劃地圖總數">
+                    <i class="fa-solid fa-map text-indigo-400 group-hover:scale-110 transition"></i>
+                    <span id="nav-total-trips" class="font-bold text-base tracking-widest">0</span>
+                </div>
+                <div class="flex items-center gap-2 text-white/80 hover:text-white transition group cursor-help" title="Total Places / 記錄節點總數">
+                    <i class="fa-solid fa-location-dot text-emerald-400 group-hover:scale-110 transition"></i>
+                    <span id="nav-total-places" class="font-bold text-base tracking-widest">0</span>
+                </div>
+            </div>
+            <!-- Language Switcher -->
+            <button onclick="toggleLanguage()" class="text-white/80 hover:text-white font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 transition text-sm flex items-center gap-2 mr-2 shadow-sm">
+                <i class="fa-solid fa-language"></i> <span id="lang-btn-text">EN</span>
+            </button>
+            <span class="text-sm font-bold text-white/80 hidden md:block drop-shadow-sm">Hi, Explorer</span>
+            <div class="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center font-bold border border-white/30 shadow-md backdrop-blur-sm">
+                E
+            </div>
+        </div>
+    </nav>
+
+    <!-- ==================== VIEW 2: DASHBOARD ==================== -->
+    <div id="dashboard-view" class="flex-1 overflow-y-auto view-hidden z-40 relative scroll-smooth w-full h-full">
+        
+        <div class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+            <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000')] bg-cover bg-center grayscale blur-[4px] opacity-50"></div>
+            <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-sm mix-blend-multiply"></div>
+            <div class="absolute inset-0 bg-gradient-to-b from-transparent via-slate-950/80 to-slate-950"></div>
+        </div>
+
+        <div class="relative z-10 flex flex-col w-full min-h-screen">
+            
+            <div class="w-full h-[60vh] min-h-[400px] flex flex-col items-center justify-center text-center px-4 mt-10">
+                <h1 class="text-6xl md:text-8xl lg:text-[9rem] font-black text-white tracking-[0.1em] drop-shadow-[0_10px_30px_rgba(0,0,0,0.8)] leading-none w-full" id="dash-title">
+                    專案控制台
+                </h1>
+                <p class="mt-8 text-sm md:text-xl text-white/60 tracking-[0.4em] uppercase font-light drop-shadow-md">
+                    Manage & Plan Your Journeys
+                </p>
+                <div class="absolute bottom-10 animate-bounce text-white/30 text-xl hidden md:block">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </div>
+            </div>
+
+            <div class="w-full max-w-7xl mx-auto px-6 md:px-10 pb-32 flex flex-col">
+                <div class="flex items-center justify-center gap-6 mb-14 w-full">
+                    <div class="h-[2px] flex-1 border-t-[2px] border-dashed border-white/20"></div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-white tracking-[0.2em] drop-shadow-md uppercase whitespace-nowrap" id="dash-my-maps">我的地圖庫</h2>
+                    <div class="h-[2px] flex-1 border-t-[2px] border-dashed border-white/20"></div>
+                </div>
+
+                <div id="trips-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <!-- Javascript will populate trips here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== VIEW 3: MAP EDITOR ==================== -->
+    <div id="map-view" class="flex-1 overflow-hidden flex flex-col md:flex-row relative view-hidden z-30">
+        
+        <button onclick="toggleDesktopSidebar()" class="hidden md:flex absolute top-4 left-4 z-[2000] bg-white/95 w-11 h-11 rounded-xl shadow-lg border border-slate-200 items-center justify-center text-slate-700 hover:text-indigo-600 hover:bg-slate-50 transition-all hover:scale-105 tooltip" title="隱藏/顯示側邊欄">
+            <i class="fa-solid fa-bars-staggered text-lg"></i>
+        </button>
+
+        <button onclick="showDashboard()" class="hidden md:flex absolute bottom-6 left-4 z-[2000] bg-slate-900 text-white w-12 h-12 rounded-xl shadow-xl flex items-center justify-center hover:bg-indigo-600 transition-all hover:scale-105 tooltip" title="返回控制台">
+            <i class="fa-solid fa-arrow-left text-xl"></i>
+        </button>
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-full md:w-[420px] lg:w-[480px] bg-slate-50 h-full flex flex-col z-[1000] shadow-[10px_0_20px_rgba(0,0,0,0.05)] transition-all duration-300 absolute md:relative -translate-x-full md:translate-x-0 pt-16 md:pt-0 border-r border-slate-200">
+            <div class="p-5 border-b border-slate-200 bg-slate-900 text-white hidden md:block pl-20 shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                        <i class="fa-solid fa-layer-group text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 id="trip-header-name" class="font-bold text-xl tracking-wide line-clamp-1">專案地圖</h1>
+                        <p class="text-[11px] text-slate-400 mt-0.5"><span id="lbl-online-mode">網路連線模式</span> | <span id="header-count">0</span> <span id="lbl-nodes-saved">個節點已保存</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Section (Categories + Days) -->
+            <div class="bg-white border-b border-slate-200 shadow-sm z-10 shrink-0">
+                <div class="px-5 pt-4 pb-2 overflow-x-auto">
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2" id="lbl-day-filter">天數篩選</label>
+                    <div id="day-buttons" class="flex gap-2 min-w-max items-center">
+                        <!-- JS Generated -->
+                    </div>
+                </div>
+                <div class="px-5 pt-1 pb-4 overflow-x-auto">
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2" id="lbl-cat-filter">分類篩選</label>
+                    <div id="cat-buttons" class="flex gap-2 min-w-max"></div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between z-10 shrink-0">
+                <div class="text-xs text-slate-500 font-medium">
+                    <span id="lbl-currently-showing">當前顯示</span> <strong id="item-count" class="text-indigo-600 text-sm mx-1">0</strong> <span id="lbl-nodes">個節點</span>
+                </div>
+                <button onclick="enableAddMode()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:scale-105 flex items-center gap-2 shadow-md shadow-indigo-200">
+                    <i class="fa-solid fa-location-crosshairs"></i> <span id="btn-add-node">新增節點</span>
+                </button>
+            </div>
+
+            <!-- Timeline List -->
+            <div id="timeline-list" class="flex-1 overflow-y-auto p-5 space-y-5 bg-[#f0f2f5]">
+                <!-- JS Generated -->
+            </div>
+
+            <!-- Footer Action Buttons (Save & Export) -->
+            <div class="p-5 bg-white border-t border-slate-200 flex flex-col gap-3 z-10 shadow-[0_-4px_15px_rgba(0,0,0,0.03)] shrink-0">
+                <button onclick="saveProgress(event)" class="w-full bg-slate-800 hover:bg-slate-900 text-white py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md hover:-translate-y-0.5">
+                    <i class="fa-solid fa-floppy-disk"></i> <span id="btn-save-progress">保存進度</span>
+                </button>
+                <button onclick="exportProject(event)" class="w-full bg-indigo-50 border border-indigo-200 hover:bg-indigo-600 hover:text-white text-indigo-700 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md hover:-translate-y-0.5">
+                    <i class="fa-solid fa-file-export"></i> <span id="btn-export-project">輸出專案 (檢閱 & 幻燈片)</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Map Main Area -->
+        <main class="flex-1 h-full w-full relative bg-slate-200 overflow-hidden">
+            <button id="mobile-toggle" onclick="toggleMobileSidebar()" class="md:hidden absolute top-4 left-4 z-[1001] bg-slate-900 text-white px-3 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg">
+                <i class="fa-solid fa-list-ul"></i> <span id="btn-node-list">節點列表</span>
+            </button>
+
+            <!-- Top Search and Checklist Info Button -->
+            <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex items-center gap-2 w-[90vw] md:w-auto justify-center">
+                <!-- Checklist / Trip Info Button -->
+                <button onclick="openTripInfoModal()" class="bg-white/95 backdrop-blur-md w-11 h-11 md:w-12 md:h-11 rounded-2xl shadow-lg border border-slate-200/80 flex items-center justify-center hover:bg-slate-50 transition flex-shrink-0 text-indigo-600 group tooltip" title="專案清單與資訊">
+                    <i class="fa-solid fa-clipboard-list text-lg group-hover:scale-110 transition"></i>
+                </button>
+                
+                <!-- Search Bar -->
+                <div class="bg-white/95 backdrop-blur-md px-2 py-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-2 flex-1 md:w-80 transition-all hover:shadow-xl focus-within:ring-2 focus-within:ring-indigo-300">
+                    <i class="fa-solid fa-satellite-dish text-slate-400 ml-3"></i>
+                    <input type="text" id="map-search-input" onkeydown="if(event.key === 'Enter') searchLocationOnMap()" class="bg-transparent border-none outline-none text-sm w-full font-bold text-slate-700 placeholder-slate-400" placeholder="透過衛星定位搜尋地點...">
+                    <button onclick="searchLocationOnMap()" class="bg-indigo-600 text-white w-9 h-9 rounded-xl flex items-center justify-center hover:bg-indigo-700 transition shadow-sm flex-shrink-0">
+                        <i class="fa-solid fa-location-arrow"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="add-toast" class="absolute top-20 left-1/2 transform -translate-x-1/2 z-[1002] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm font-bold flex items-center gap-3 view-hidden animate-pulse">
+                <i class="fa-solid fa-hand-pointer text-amber-400 text-lg"></i> <span id="lbl-click-to-add">請在地圖上點擊以新增節點...</span>
+                <button onclick="cancelAddMode()" class="ml-2 w-6 h-6 bg-slate-700 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-600 transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div id="map" class="h-full w-full z-0"></div>
+
+            <div class="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-xl shadow-lg border border-slate-200/80 flex items-center gap-3">
+                <i class="fa-solid fa-route text-indigo-600 text-sm"></i>
+                <span class="text-xs font-bold text-slate-700 hidden sm:inline" id="lbl-route">路線：</span>
+                <button id="route-btn" onclick="toggleRoute()" class="text-xs bg-indigo-600 text-white font-semibold px-3 py-1.5 rounded-lg border border-indigo-600 transition flex items-center gap-1 shadow-sm hover:bg-indigo-700">
+                    <i class="fa-solid fa-eye-slash"></i> <span id="btn-hide">隱藏</span>
+                </button>
+            </div>
+
+            <!-- RIGHT INFO BAR -->
+            <div id="right-info-bar" class="absolute top-0 right-0 h-full w-full md:w-[400px] bg-white shadow-[-15px_0_40px_rgba(0,0,0,0.15)] z-[2000] transform translate-x-full transition-transform duration-500 ease-out flex flex-col border-l border-slate-200 rounded-l-2xl overflow-hidden">
+                <button onclick="closeInfoBar(true)" class="absolute top-4 right-4 w-10 h-10 bg-slate-900/50 hover:bg-slate-900 text-white rounded-full flex items-center justify-center transition z-20 backdrop-blur-md shadow-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+                
+                <div class="h-64 bg-slate-200 relative">
+                    <img id="rib-img" src="" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
+                    <div class="absolute bottom-6 left-6 right-6 flex items-end gap-4">
+                        <div id="rib-icon-bg" class="w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl text-3xl flex-shrink-0 border-2 border-white/20">
+                            <i id="rib-icon" class="fa-solid fa-camera"></i>
+                        </div>
+                        <div class="text-white pb-1 w-full">
+                            <p id="rib-cat-name" class="text-xs font-black text-indigo-300 tracking-widest mb-1.5 uppercase">分類</p>
+                            <h2 id="rib-name" class="font-bold text-3xl leading-tight drop-shadow-md line-clamp-2">地點名稱</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 flex-1 overflow-y-auto space-y-6 bg-slate-50">
+                    <div id="rib-url-container" class="view-hidden">
+                        <a id="rib-url-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3.5 px-4 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all group">
+                            <i class="fa-solid fa-link text-indigo-400 group-hover:rotate-12 transition"></i> <span id="btn-visit-link">前往相關網頁連結</span>
+                        </a>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                        <h4 class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3" id="lbl-scheduled-time">排定時間</h4>
+                        <div class="flex items-center gap-3 text-slate-700 font-bold">
+                            <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                <i class="fa-regular fa-clock text-lg"></i> 
+                            </div>
+                            <span id="rib-time" class="text-lg">09:00 - 12:00</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                        <h4 class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3" id="lbl-details-notes">詳細說明 / 備註</h4>
+                        <p id="rib-desc" class="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                            無詳細說明。
+                        </p>
+                    </div>
+                </div>
+
+                <div class="p-5 border-t border-slate-200 flex gap-3 bg-white">
+                    <button onclick="deleteCurrentHoverPlace()" class="w-full bg-red-50 border border-red-100 hover:bg-red-500 hover:text-white text-red-600 py-3 rounded-xl text-sm font-bold transition shadow-sm flex justify-center items-center gap-2 group">
+                        <i class="fa-solid fa-trash-can group-hover:animate-bounce"></i> <span id="btn-delete-node">刪除此點</span>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- TRIP INFO MODAL (CHECKLIST & DETAILS) -->
+    <div id="trip-info-modal" class="fixed inset-0 z-[4000] view-hidden modal-backdrop flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all border border-slate-100 flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-600 px-6 py-5 flex justify-between items-center text-white shrink-0">
+                <h3 class="font-bold text-xl flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i> <span id="modal-title-info">專案清單與資訊</span></h3>
+                <button onclick="closeTripInfoModal()" class="w-8 h-8 rounded-full bg-indigo-500 hover:bg-indigo-400 flex items-center justify-center transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <label class="block text-xs font-bold text-slate-500 mb-2" id="lbl-gather-time"><i class="fa-regular fa-clock text-indigo-400"></i> 集合時間</label>
+                    <input type="text" id="ti-gather-time" class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="e.g. 2026-07-22 08:00 AM">
+                </div>
+                
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <label class="block text-xs font-bold text-slate-500 mb-3 flex justify-between items-center">
+                        <span id="lbl-checklist"><i class="fa-solid fa-suitcase-rolling text-indigo-400"></i> 應帶物品清單</span>
+                        <button onclick="addChecklistItem()" type="button" class="text-indigo-600 hover:text-white hover:bg-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg transition text-[11px] font-bold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-plus"></i> <span id="btn-add-item">新增項目</span></button>
+                    </label>
+                    <div id="ti-checklist-container" class="space-y-2.5">
+                        <!-- Dynamic inputs injected via JS -->
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <label class="block text-xs font-bold text-slate-500 mb-2" id="lbl-trip-notes"><i class="fa-solid fa-circle-exclamation text-indigo-400"></i> 注意事項</label>
+                    <textarea id="ti-notes" rows="4" class="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="請輸入重要注意事項..."></textarea>
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-white">
+                <button type="button" onclick="closeTripInfoModal()" class="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition" id="btn-cancel-info">取消</button>
+                <button type="button" onclick="saveTripInfo()" class="px-7 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition hover:scale-105"><span id="btn-save-info">儲存資訊</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE TRIP MODAL -->
+    <div id="create-trip-modal" class="fixed inset-0 z-[4000] view-hidden modal-backdrop flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all border border-slate-100">
+            <div class="bg-indigo-600 px-6 py-5 flex justify-between items-center text-white">
+                <h3 class="font-bold text-xl flex items-center gap-2"><i class="fa-solid fa-folder-plus"></i> <span id="modal-title-create">新增專案地圖</span></h3>
+                <button onclick="closeCreateTripModal()" class="w-8 h-8 rounded-full bg-indigo-500 hover:bg-indigo-400 flex items-center justify-center transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="submitNewTrip(event)" class="p-6 space-y-5">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-trip-name">地圖/專案名稱 *</label>
+                    <input type="text" id="nt-name" required class="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="e.g. Europe Exchange">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-trip-loc">主要區域 (城市/國家) *</label>
+                    <input type="text" id="nt-loc" required class="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="e.g. London, UK">
+                    <p class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5"><i class="fa-solid fa-satellite-dish text-indigo-400"></i> <span id="lbl-trip-loc-desc">系統將透過衛星資料自動為您定位中心點</span></p>
+                </div>
+                
+                <div class="pt-5 flex justify-end gap-3 border-t border-slate-100 mt-6">
+                    <button type="button" onclick="closeCreateTripModal()" class="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition" id="btn-cancel-1">取消</button>
+                    <button id="create-trip-btn" type="submit" class="px-7 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition hover:scale-105"><span id="btn-create">創建專案</span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADD LOCATION MODAL -->
+    <div id="add-modal" class="fixed inset-0 z-[4000] view-hidden modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all border border-slate-100 my-8">
+            <div class="bg-slate-900 px-6 py-5 flex justify-between items-center text-white">
+                <h3 class="font-bold text-xl flex items-center gap-2"><i class="fa-solid fa-map-pin text-amber-400"></i> <span id="modal-title-add">新增地圖節點</span></h3>
+                <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="saveNewPlace(event)" class="p-6 space-y-5">
+                <div class="grid grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-node-name">節點名稱 *</label>
+                        <input type="text" id="m-name" required class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="e.g. Exhibition Center">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-node-time">時間安排 *</label>
+                        <input type="text" id="m-time" required class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="e.g. 09:00">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-node-day">天數 *</label>
+                        <select id="m-day" class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                            <!-- Populated dynamically via JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-node-cat">節點屬性 *</label>
+                        <select id="m-cat" class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                            <!-- Populated in JS based on lang -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-indigo-600 mb-2" id="lbl-custom-img"><i class="fa-solid fa-cloud-arrow-up"></i> 自訂節點圖片 (本機上傳)</label>
+                        <div class="flex items-center gap-3">
+                            <input type="file" id="m-local-img" accept="image/*" class="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition w-full">
+                        </div>
+                        <input type="hidden" id="m-img-base64"> 
+                    </div>
+                    <div class="border-t border-slate-200 pt-3 mt-3">
+                        <label class="block text-xs font-bold text-indigo-600 mb-1.5" id="lbl-url-link"><i class="fa-solid fa-link"></i> 綁定網頁連結 (URL)</label>
+                        <input type="url" id="m-link" class="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition" placeholder="https://">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5" id="lbl-node-desc">詳細說明 / 備註</label>
+                    <textarea id="m-desc" rows="3" class="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="..."></textarea>
+                </div>
+
+                <input type="hidden" id="m-lat">
+                <input type="hidden" id="m-lng">
+
+                <div class="pt-5 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onclick="closeModal()" class="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition" id="btn-cancel-2">取消</button>
+                    <button type="submit" class="px-7 py-2.5 text-sm font-bold text-white bg-slate-900 hover:bg-black rounded-xl shadow-md transition hover:scale-105"><span id="btn-save-node">儲存節點</span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // ==========================================
+        // i18n Dictionary
+        // ==========================================
+        let currentLang = 'zh'; // default
+
+        const dict = {
+            zh: {
+                landingPress: "— 請按任意鍵或點擊以開始 —",
+                dashTitle: "專案控制台",
+                dashMyMaps: "我的地圖庫",
+                btnEnterMap: "進入網路地圖",
+                newProjectTitle: "新增專案地圖",
+                newProjectDesc: "搜尋全球區域，建立全新資料庫",
+                lblOnlineMode: "網路連線模式",
+                lblNodesSaved: "個節點已保存",
+                lblDayFilter: "天數篩選",
+                lblCatFilter: "分類篩選",
+                lblCurrentlyShowing: "當前顯示",
+                lblNodes: "個節點",
+                btnAddNode: "新增節點",
+                btnSaveProgress: "保存進度",
+                btnExportProject: "輸出專案 (檢閱 & 幻燈片)",
+                btnNodeList: "節點列表",
+                searchPlaceholder: "透過衛星定位搜尋地點...",
+                lblClickToAdd: "請在地圖上點擊以新增節點...",
+                lblRoute: "路線：",
+                btnHide: "隱藏",
+                btnShow: "顯示",
+                btnVisitLink: "前往相關網頁連結",
+                lblScheduledTime: "排定時間",
+                lblDetailsNotes: "詳細說明 / 備註",
+                btnDeleteNode: "刪除此點",
+                modalTitleCreate: "新增專案地圖",
+                lblTripName: "地圖/專案名稱 *",
+                lblTripLoc: "主要區域 (城市/國家) *",
+                lblTripLocDesc: "系統將透過衛星資料自動為您定位中心點",
+                btnCancel: "取消",
+                btnCreate: "創建專案",
+                modalTitleAdd: "新增地圖節點",
+                lblNodeName: "節點名稱 *",
+                lblNodeTime: "時間安排 *",
+                lblNodeDay: "天數 *",
+                lblNodeCat: "節點屬性 *",
+                lblCustomImg: '<i class="fa-solid fa-cloud-arrow-up"></i> 自訂節點圖片 (本機上傳)',
+                lblUrlLink: '<i class="fa-solid fa-link"></i> 綁定網頁連結 (URL)',
+                lblNodeDesc: "詳細說明 / 備註",
+                btnSaveNode: "儲存節點",
+                alertDeleteMap: "確定要刪除這個專案地圖嗎？此操作無法復原。",
+                alertSearchErr: "搜尋發生錯誤。",
+                alertLocNotFound: "找不到該地點。",
+                alertDeleteNode: "確定要刪除這個節點嗎？",
+                emptyNodesText: "此條件下尚無節點",
+                btnShowOnMap: "顯示於地圖",
+                btnView: "查看",
+                catAll: '全部分類', catLandmark: '地標觀景', catHistory: '歷史文化', catFood: '在地美食', catPark: '主題樂園', catHotel: '住宿基地', 
+                catTransport: '交通出行', catBusiness: '企業機構',
+                msgProgressSaved: "進度已保存！",
+                msgExportSuccess: "專案輸出成功！",
+                modalTitleInfo: "專案清單與資訊",
+                lblGatherTime: '<i class="fa-regular fa-clock text-indigo-400"></i> 集合時間',
+                lblChecklist: '<i class="fa-solid fa-suitcase-rolling text-indigo-400"></i> 應帶物品清單',
+                btnAddItem: "新增項目",
+                lblTripNotes: '<i class="fa-solid fa-circle-exclamation text-indigo-400"></i> 注意事項',
+                btnSaveInfo: "儲存資訊"
+            },
+            en: {
+                landingPress: "— Press Any Key or Click to Start —",
+                dashTitle: "Project Dashboard",
+                dashMyMaps: "My Map Library",
+                btnEnterMap: "Enter Web Map",
+                newProjectTitle: "Create New Project",
+                newProjectDesc: "Search global regions to build a new database",
+                lblOnlineMode: "Online Mode",
+                lblNodesSaved: "nodes saved",
+                lblDayFilter: "Day Filter",
+                lblCatFilter: "Category Filter",
+                lblCurrentlyShowing: "Showing",
+                lblNodes: "nodes",
+                btnAddNode: "Add Node",
+                btnSaveProgress: "Save Progress",
+                btnExportProject: "Export Project (View & Slide)",
+                btnNodeList: "Node List",
+                searchPlaceholder: "Search location via satellite...",
+                lblClickToAdd: "Click on the map to add a new node...",
+                lblRoute: "Route:",
+                btnHide: "Hide",
+                btnShow: "Show",
+                btnVisitLink: "Visit Associated Link",
+                lblScheduledTime: "Scheduled Time",
+                lblDetailsNotes: "Details / Notes",
+                btnDeleteNode: "Delete this node",
+                modalTitleCreate: "Create New Project",
+                lblTripName: "Map/Project Name *",
+                lblTripLoc: "Main Region (City/Country) *",
+                lblTripLocDesc: "System will auto-locate the center via satellite",
+                btnCancel: "Cancel",
+                btnCreate: "Create Project",
+                modalTitleAdd: "Add Map Node",
+                lblNodeName: "Node Name *",
+                lblNodeTime: "Time Schedule *",
+                lblNodeDay: "Day *",
+                lblNodeCat: "Category *",
+                lblCustomImg: '<i class="fa-solid fa-cloud-arrow-up"></i> Custom Node Image (Upload)',
+                lblUrlLink: '<i class="fa-solid fa-link"></i> Bind Web Link (URL)',
+                lblNodeDesc: "Details / Notes",
+                btnSaveNode: "Save Node",
+                alertDeleteMap: "Are you sure you want to delete this project? This cannot be undone.",
+                alertSearchErr: "Search error occurred.",
+                alertLocNotFound: "Location not found.",
+                alertDeleteNode: "Are you sure you want to delete this node?",
+                emptyNodesText: "No nodes found under these conditions",
+                btnShowOnMap: "Show on Map",
+                btnView: "View",
+                catAll: 'All Categories', catLandmark: 'Landmark', catHistory: 'History/Culture', catFood: 'Local Food', catPark: 'Theme Park', catHotel: 'Accommodation', 
+                catTransport: 'Transport', catBusiness: 'Enterprise',
+                msgProgressSaved: "Progress Saved!",
+                msgExportSuccess: "Export Successful!",
+                modalTitleInfo: "Project List & Info",
+                lblGatherTime: '<i class="fa-regular fa-clock text-indigo-400"></i> Gathering Time',
+                lblChecklist: '<i class="fa-solid fa-suitcase-rolling text-indigo-400"></i> Packing Checklist',
+                btnAddItem: "Add Item",
+                lblTripNotes: '<i class="fa-solid fa-circle-exclamation text-indigo-400"></i> Notes & Precautions',
+                btnSaveInfo: "Save Info"
+            }
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            document.getElementById('lang-btn-text').innerText = currentLang === 'zh' ? 'EN' : '中';
+            updateUI_i18n();
+        }
+
+        function updateUI_i18n() {
+            const d = dict[currentLang];
+            document.getElementById('landing-press-text').innerText = d.landingPress;
+            document.getElementById('dash-title').innerText = d.dashTitle;
+            document.getElementById('dash-my-maps').innerText = d.dashMyMaps;
+            
+            document.getElementById('lbl-online-mode').innerText = d.lblOnlineMode;
+            document.getElementById('lbl-nodes-saved').innerText = d.lblNodesSaved;
+            document.getElementById('lbl-day-filter').innerText = d.lblDayFilter;
+            document.getElementById('lbl-cat-filter').innerText = d.lblCatFilter;
+            document.getElementById('lbl-currently-showing').innerText = d.lblCurrentlyShowing;
+            document.getElementById('lbl-nodes').innerText = d.lblNodes;
+            document.getElementById('btn-add-node').innerText = d.btnAddNode;
+            document.getElementById('btn-save-progress').innerText = d.btnSaveProgress;
+            document.getElementById('btn-export-project').innerText = d.btnExportProject;
+            document.getElementById('btn-node-list').innerText = d.btnNodeList;
+            document.getElementById('map-search-input').placeholder = d.searchPlaceholder;
+            document.getElementById('lbl-click-to-add').innerText = d.lblClickToAdd;
+            document.getElementById('lbl-route').innerText = d.lblRoute;
+            document.getElementById('btn-hide').innerText = isRouteVisible ? d.btnHide : d.btnShow;
+            document.getElementById('btn-visit-link').innerText = d.btnVisitLink;
+            document.getElementById('lbl-scheduled-time').innerText = d.lblScheduledTime;
+            document.getElementById('lbl-details-notes').innerText = d.lblDetailsNotes;
+            document.getElementById('btn-delete-node').innerText = d.btnDeleteNode;
+            
+            document.getElementById('modal-title-create').innerText = d.modalTitleCreate;
+            document.getElementById('lbl-trip-name').innerText = d.lblTripName;
+            document.getElementById('lbl-trip-loc').innerText = d.lblTripLoc;
+            document.getElementById('lbl-trip-loc-desc').innerText = d.lblTripLocDesc;
+            document.getElementById('btn-cancel-1').innerText = d.btnCancel;
+            document.getElementById('btn-create').innerText = d.btnCreate;
+
+            document.getElementById('modal-title-add').innerText = d.modalTitleAdd;
+            document.getElementById('lbl-node-name').innerText = d.lblNodeName;
+            document.getElementById('lbl-node-time').innerText = d.lblNodeTime;
+            document.getElementById('lbl-node-day').innerText = d.lblNodeDay;
+            document.getElementById('lbl-node-cat').innerText = d.lblNodeCat;
+            document.getElementById('lbl-custom-img').innerHTML = d.lblCustomImg;
+            document.getElementById('lbl-url-link').innerHTML = d.lblUrlLink;
+            document.getElementById('lbl-node-desc').innerText = d.lblNodeDesc;
+            document.getElementById('btn-cancel-2').innerText = d.btnCancel;
+            document.getElementById('btn-save-node').innerText = d.btnSaveNode;
+
+            document.getElementById('modal-title-info').innerText = d.modalTitleInfo;
+            document.getElementById('lbl-gather-time').innerHTML = d.lblGatherTime;
+            document.getElementById('lbl-checklist').innerHTML = d.lblChecklist + ' <button onclick="addChecklistItem()" type="button" class="text-indigo-600 hover:text-white hover:bg-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg transition text-[11px] font-bold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-plus"></i> <span id="btn-add-item">' + d.btnAddItem + '</span></button>';
+            document.getElementById('lbl-trip-notes').innerHTML = d.lblTripNotes;
+            document.getElementById('btn-cancel-info').innerText = d.btnCancel;
+            document.getElementById('btn-save-info').innerText = d.btnSaveInfo;
+
+            categories.all.name = d.catAll;
+            categories.landmark.name = d.catLandmark;
+            categories.history.name = d.catHistory;
+            categories.food.name = d.catFood;
+            categories.park.name = d.catPark;
+            categories.hotel.name = d.catHotel;
+            categories.transport.name = d.catTransport;
+            categories.business.name = d.catBusiness;
+
+            if(!document.getElementById('dashboard-view').classList.contains('view-hidden')) {
+                renderDashboard();
+            }
+            if(!document.getElementById('map-view').classList.contains('view-hidden')) {
+                renderFilterButtons();
+                refreshUI();
+            }
+            
+            const catSelect = document.getElementById('m-cat');
+            if (catSelect) {
+                catSelect.innerHTML = `
+                    <option value="landmark">${d.catLandmark}</option>
+                    <option value="history">${d.catHistory}</option>
+                    <option value="food">${d.catFood}</option>
+                    <option value="park">${d.catPark}</option>
+                    <option value="hotel">${d.catHotel}</option>
+                    <option value="transport">${d.catTransport}</option>
+                    <option value="business">${d.catBusiness}</option>
+                `;
+            }
+        }
+
+        // ==========================================
+        function handleLandingExit() {
+            const landing = document.getElementById('landing-view');
+            if (!landing.classList.contains('view-hidden')) {
+                landing.classList.add('opacity-0'); 
+                setTimeout(() => {
+                    landing.classList.add('view-hidden');
+                    document.getElementById('app-nav').classList.remove('view-hidden');
+                    document.getElementById('dashboard-view').classList.remove('view-hidden');
+                    updateUI_i18n(); // Init i18n texts
+                }, 1000);
+            }
+        }
+        document.addEventListener('keydown', handleLandingExit);
+        document.getElementById('landing-view').addEventListener('click', handleLandingExit);
+
+        const categories = {
+            all: { name: '全部分類', icon: 'fa-layer-group', color: 'bg-slate-700' },
+            landmark: { name: '地標觀景', icon: 'fa-mountain-sun', color: 'bg-amber-500' },
+            history: { name: '歷史文化', icon: 'fa-building-columns', color: 'bg-stone-600' },
+            food: { name: '在地美食', icon: 'fa-utensils', color: 'bg-rose-500' },
+            park: { name: '主題樂園', icon: 'fa-ticket', color: 'bg-fuchsia-500' },
+            hotel: { name: '住宿基地', icon: 'fa-bed', color: 'bg-emerald-600' },
+            transport: { name: '交通出行', icon: 'fa-train-subway', color: 'bg-blue-500' },
+            business: { name: '企業機構', icon: 'fa-building', color: 'bg-cyan-600' }
+        };
+
+        const defaultTrips = [{
+            id: 'trip_default_dab',
+            name: 'DAB Exchange / 示範專案',
+            location: 'Hong Kong',
+            lat: 22.3193, lng: 114.1694,
+            daysCount: 3,
+            details: { gatherTime: '', checklist: ['護照 / Passport', '行動電源 / Power Bank'], notes: '' },
+            places: [
+                { id: 'd1-demo1', day: 'day1', time: '12:10 - 14:00', name: 'HKIA / 國際機場 ➔ 市區', category: 'transport', lat: 22.3080, lng: 113.9185, description: '搭乘機場快線或客運前往市中心，步行至預定住宿。 Take airport express to downtown.', customImage: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80', link: 'https://www.hongkongairport.com/' },
+                { id: 'd1-demo2', day: 'day1', time: '15:00', name: 'Victoria Harbour / 維多利亞港', category: 'landmark', lat: 22.2922, lng: 114.1706, description: '香港著名地標，適合下午散步觀景。 Famous landmark for afternoon walk.', customImage: 'https://images.unsplash.com/photo-1506974151740-4221a681c640?w=800&q=80', link: '' }
+            ]
+        }];
+
+        let tripsData = JSON.parse(localStorage.getItem('dabExchangeDataV9'));
+        if (!tripsData || tripsData.length === 0) {
+            let oldData = JSON.parse(localStorage.getItem('dabExchangeDataV8'));
+            if (!oldData) oldData = JSON.parse(localStorage.getItem('dabExchangeDataV7'));
+            
+            tripsData = oldData && oldData.length > 0 ? oldData : defaultTrips;
+            
+            // Migrate old data categories (business to transport for airports)
+            tripsData.forEach(t => {
+                if (!t.details) t.details = { gatherTime: '', checklist: [], notes: '' };
+                t.places.forEach(p => {
+                    if (p.name.includes('HKIA') || p.name.includes('機場') || p.name.includes('Airport')) {
+                        if (p.category === 'business') p.category = 'transport';
+                    }
+                });
+            });
+            localStorage.setItem('dabExchangeDataV9', JSON.stringify(tripsData));
+        }
+
+        let currentTripId = null;
+        let activeDay = 'all';
+        let activeCategory = 'all'; 
+
+        function saveDataLocally() { localStorage.setItem('dabExchangeDataV9', JSON.stringify(tripsData)); }
+        function getCurrentPlaces() { const t = tripsData.find(t => t.id === currentTripId); return t ? t.places : []; }
+        function getCurrentTrip() { return tripsData.find(t => t.id === currentTripId); }
+
+        const placeholderImages = [
+            "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=800&q=80"
+        ];
+
+        function showDashboard() {
+            document.getElementById('map-view').classList.add('view-hidden');
+            const nav = document.getElementById('app-nav');
+            nav.classList.remove('view-hidden');
+            document.getElementById('dashboard-view').classList.remove('view-hidden');
+            renderDashboard();
+        }
+
+        function deleteTrip(e, id) {
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            if(confirm(dict[currentLang].alertDeleteMap)) {
+                tripsData = tripsData.filter(t => t.id !== id);
+                saveDataLocally();
+                renderDashboard();
+            }
+        }
+
+        function renderDashboard() {
+            const grid = document.getElementById('trips-grid');
+            let html = '';
+            const d = dict[currentLang];
+            
+            tripsData.forEach((trip, index) => {
+                const img = placeholderImages[index % placeholderImages.length];
+                html += `
+                <div onclick="openTrip('${trip.id}')" oncontextmenu="deleteTrip(event, '${trip.id}')" class="bg-white/5 backdrop-blur-lg rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.3)] border border-white/10 hover:shadow-[0_12px_40px_rgb(0,0,0,0.6)] hover:-translate-y-2 hover:bg-white/10 hover:border-indigo-400/50 transition-all duration-500 cursor-pointer group flex flex-col">
+                    <div class="h-60 bg-slate-900 relative overflow-hidden">
+                        <img src="${img}" class="w-full h-full object-cover group-hover:scale-110 transition duration-700 ease-in-out opacity-80 group-hover:opacity-100">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
+                        <div class="absolute top-4 right-4 bg-slate-900/60 backdrop-blur-md border border-white/10 text-white/90 text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm">
+                            ${trip.places.length} ${d.lblNodes.replace('個節點', '')}
+                        </div>
+                    </div>
+                    <div class="p-6 flex-1 flex flex-col relative z-10 bg-transparent">
+                        <div class="flex items-center gap-2 text-xs font-bold text-indigo-300 mb-3 uppercase tracking-widest drop-shadow-sm">
+                            <i class="fa-solid fa-satellite-dish"></i> ${trip.location}
+                        </div>
+                        <h3 class="font-bold text-2xl md:text-3xl text-white group-hover:text-indigo-200 transition leading-tight mb-2 drop-shadow-sm">${trip.name}</h3>
+                        <div class="mt-auto pt-6 border-t border-white/10 flex justify-end items-center justify-between">
+                            <button class="text-sm font-bold text-white/60 flex items-center gap-2 group-hover:text-white group-hover:translate-x-1 transition ml-auto">
+                                ${d.btnEnterMap} <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            html += `
+            <div onclick="openCreateTripModal()" class="border-[2px] border-dashed border-white/20 rounded-3xl flex flex-col items-center justify-center text-center p-6 min-h-[350px] hover:bg-white/5 hover:border-white/40 hover:-translate-y-2 transition-all duration-500 cursor-pointer group backdrop-blur-sm shadow-[0_8px_30px_rgb(0,0,0,0.2)] hover:shadow-[0_12px_40px_rgb(0,0,0,0.5)]">
+                <div class="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center text-white mb-5 shadow-sm group-hover:scale-110 group-hover:bg-indigo-500 transition duration-300 border border-white/20">
+                    <i class="fa-solid fa-plus text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-xl text-white/90 group-hover:text-indigo-200 tracking-wider">${d.newProjectTitle}</h3>
+                <p class="text-sm text-white/50 mt-2 tracking-wide font-light">${d.newProjectDesc}</p>
+            </div>`;
+
+            grid.innerHTML = html;
+            document.getElementById('nav-total-trips').innerText = tripsData.length;
+            document.getElementById('nav-total-places').innerText = tripsData.reduce((sum, t) => sum + t.places.length, 0);
+        }
+
+        let map, markers = {}, isAddingMode = false, routePolyline = null, isRouteVisible = true;
+
+        function openTrip(id) {
+            currentTripId = id;
+            const trip = getCurrentTrip();
+            document.getElementById('trip-header-name').innerText = trip.name;
+            
+            document.getElementById('dashboard-view').classList.add('view-hidden');
+            document.getElementById('app-nav').classList.add('view-hidden');
+            document.getElementById('map-view').classList.remove('view-hidden');
+            
+            setTimeout(() => {
+                if (!map) initMap();
+                map.invalidateSize();
+                map.setView([trip.lat, trip.lng], 13, { animate: false });
+                
+                activeDay = 'all'; activeCategory = 'all';
+                renderFilterButtons();
+                refreshUI(); 
+            }, 200);
+        }
+
+        function initMap() {
+            map = L.map('map', { zoomControl: false });
+            L.control.zoom({ position: 'bottomright' }).addTo(map); 
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            map.on('click', function(e) {
+                if (!isAddingMode) return;
+                openModalWithCoords(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        function refreshUI() {
+            renderTimelineList();
+            renderMapMarkers();
+            if (isRouteVisible) updateRoutePolyline();
+            document.getElementById('header-count').innerText = getFilteredPlaces().length;
+            document.getElementById('item-count').innerText = getFilteredPlaces().length;
+        }
+
+        function getFilteredPlaces() {
+            let places = getCurrentPlaces();
+            if (activeDay !== 'all') places = places.filter(i => i.day === activeDay);
+            if (activeCategory !== 'all') places = places.filter(i => i.category === activeCategory);
+            return places;
+        }
+
+        async function searchLocationOnMap() {
+            const input = document.getElementById('map-search-input');
+            const q = input.value.trim();
+            if(!q) return;
+            
+            const btn = input.nextElementSibling;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if(data && data.length > 0) {
+                    map.flyTo([parseFloat(data[0].lat), parseFloat(data[0].lon)], 14);
+                } else {
+                    alert(dict[currentLang].alertLocNotFound);
+                }
+            } catch(e) { 
+                console.error(e); 
+                alert(dict[currentLang].alertSearchErr);
+            }
+            btn.innerHTML = '<i class="fa-solid fa-location-arrow"></i>';
+        }
+
+        function renderFilterButtons() {
+            const trip = getCurrentTrip();
+            const d = dict[currentLang];
+            let daysHtml = `<button onclick="filterDay('all')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeDay === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}">${currentLang === 'zh' ? '全部' : 'All'}</button>`;
+            
+            for(let i=1; i<=trip.daysCount; i++) {
+                const k = 'day' + i;
+                const active = activeDay === k;
+                daysHtml += `<button onclick="filterDay('${k}')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all ${active ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}">Day ${i}</button>`;
+            }
+            daysHtml += `<button onclick="addDay()" class="px-3 py-2 rounded-xl text-xs font-bold transition-all bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 hover:scale-105" title="Add Day"><i class="fa-solid fa-plus"></i></button>`;
+            
+            document.getElementById('day-buttons').innerHTML = daysHtml;
+
+            document.getElementById('cat-buttons').innerHTML = Object.keys(categories).map(k => {
+                const active = activeCategory === k;
+                return `<button onclick="filterCategory('${k}')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${active ? categories[k].color + ' text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}"><i class="fa-solid ${categories[k].icon} mr-1.5"></i> ${categories[k].name}</button>`;
+            }).join('');
+        }
+        
+        function filterDay(k) { activeDay = k; renderFilterButtons(); refreshUI(); closeInfoBar(); }
+        function filterCategory(k) { activeCategory = k; renderFilterButtons(); refreshUI(); closeInfoBar(); }
+        
+        function addDay() {
+            const trip = getCurrentTrip();
+            trip.daysCount++;
+            saveDataLocally();
+            renderFilterButtons();
+        }
+
+        function toggleRoute() {
+            const btn = document.getElementById('route-btn');
+            const d = dict[currentLang];
+            isRouteVisible = !isRouteVisible;
+            if (isRouteVisible) {
+                updateRoutePolyline();
+                btn.className = 'text-xs bg-indigo-600 text-white font-semibold px-3 py-1.5 rounded-lg border border-indigo-600 transition flex items-center gap-1 shadow-sm hover:bg-indigo-700';
+                btn.innerHTML = `<i class="fa-solid fa-eye-slash"></i> <span id="btn-hide">${d.btnHide}</span>`;
+            } else {
+                if (routePolyline) map.removeLayer(routePolyline);
+                btn.className = 'text-xs bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-sm';
+                btn.innerHTML = `<i class="fa-solid fa-eye"></i> <span id="btn-hide">${d.btnShow}</span>`;
+            }
+        }
+        function updateRoutePolyline() {
+            if (routePolyline) map.removeLayer(routePolyline);
+            if (!isRouteVisible) return;
+            const coords = getFilteredPlaces().map(i => [i.lat, i.lng]);
+            if (coords.length > 1) routePolyline = L.polyline(coords, { color: '#4f46e5', weight: 4, opacity: 0.8, dashArray: '8, 8' }).addTo(map);
+        }
+
+        let currentHoverPlaceId = null;
+
+        function openInfoBar(item) {
+            currentHoverPlaceId = item.id;
+            const bar = document.getElementById('right-info-bar');
+            
+            document.getElementById('rib-name').innerText = item.name;
+            document.getElementById('rib-time').innerText = item.time;
+            document.getElementById('rib-desc').innerText = item.description || (currentLang === 'zh' ? '無詳細說明。' : 'No description provided.');
+            
+            const cat = categories[item.category] || categories.landmark;
+            document.getElementById('rib-cat-name').innerText = cat.name;
+            document.getElementById('rib-icon-bg').className = `w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-xl text-3xl flex-shrink-0 border-2 border-white/20 ${cat.color}`;
+            document.getElementById('rib-icon').className = `fa-solid ${cat.icon}`;
+
+            const defaultImg = placeholderImages[item.name.length % placeholderImages.length];
+            document.getElementById('rib-img').src = item.customImage ? item.customImage : defaultImg;
+
+            const urlContainer = document.getElementById('rib-url-container');
+            const urlBtn = document.getElementById('rib-url-btn');
+            if (item.link && item.link.trim() !== "") {
+                urlContainer.classList.remove('view-hidden');
+                urlBtn.href = item.link;
+            } else {
+                urlContainer.classList.add('view-hidden');
+            }
+
+            bar.classList.remove('translate-x-full');
+        }
+
+        function closeInfoBar() {
+            document.getElementById('right-info-bar').classList.add('translate-x-full');
+        }
+
+        function renderMapMarkers() {
+            Object.values(markers).forEach(m => map.removeLayer(m));
+            markers = {};
+            
+            getFilteredPlaces().forEach(item => {
+                const cat = categories[item.category] || categories.landmark;
+                let iconHtml = '';
+                
+                if (item.customImage) {
+                    iconHtml = `<div class="custom-marker w-14 h-14 border-[3px] border-white" style="background-image: url('${item.customImage}'); border-color: ${getComputedStyle(document.documentElement).getPropertyValue('--tw-ring-color') || 'white'};">
+                                    <div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full ${cat.color} border-2 border-white flex items-center justify-center text-[10px] text-white"><i class="fa-solid ${cat.icon}"></i></div>
+                                </div>`;
+                } else {
+                    iconHtml = `<div class="custom-marker ${cat.color} w-12 h-12 text-[18px]"><i class="fa-solid ${cat.icon}"></i></div>`;
+                }
+
+                const customIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: iconHtml,
+                    iconSize: [56, 56], iconAnchor: [28, 28]
+                });
+                const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(map);
+                
+                const popupImg = item.customImage ? item.customImage : placeholderImages[item.name.length % placeholderImages.length];
+                const popupHtml = `
+                    <div class="w-56 flex flex-col pointer-events-none">
+                        <img src="${popupImg}" class="w-full h-32 object-cover rounded-t-xl m-0">
+                        <div class="p-4 bg-white rounded-b-xl">
+                            <div class="font-bold text-base text-slate-800 leading-tight">${item.name}</div>
+                        </div>
+                    </div>
+                `;
+                marker.bindPopup(popupHtml, { closeButton: false, offset: [0, -15] });
+                
+                marker.on('mouseover', function (e) { this.openPopup(); });
+                marker.on('mouseout', function (e) { this.closePopup(); });
+                
+                marker.on('click', () => {
+                    map.flyTo([item.lat, item.lng], 15);
+                    openInfoBar(item);
+                });
+
+                markers[item.id] = marker;
+            });
+        }
+
+        function renderTimelineList() {
+            const container = document.getElementById('timeline-list');
+            const data = getFilteredPlaces();
+            const d = dict[currentLang];
+            
+            if(data.length === 0) {
+                container.innerHTML = `<div class="text-center py-20 text-slate-400"><div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-200"><i class="fa-solid fa-ghost text-3xl text-slate-300"></i></div><p class="text-sm font-bold text-slate-500">${d.emptyNodesText}</p></div>`;
+                return;
+            }
+
+            container.innerHTML = data.map(item => {
+                const catInfo = categories[item.category] || categories.landmark;
+                const popupImg = item.customImage ? item.customImage : placeholderImages[item.name.length % placeholderImages.length];
+                const dayDisplayNum = item.day.replace('day', '');
+
+                return `
+                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer group" onclick="map.flyTo([${item.lat}, ${item.lng}], 15); openInfoBar(${JSON.stringify(item).replace(/"/g, '&quot;')});">
+                        <div class="bg-[#1a1f2c] text-white px-4 py-2.5 flex justify-between items-center">
+                            <div class="flex items-center gap-2 text-rose-400 font-bold text-sm tracking-wide">
+                                <i class="fa-solid fa-clock"></i> ${item.time}
+                            </div>
+                            <div class="bg-white/15 text-white/90 px-2.5 py-1 rounded text-xs font-medium tracking-wider">
+                                Day ${dayDisplayNum}
+                            </div>
+                        </div>
+                        <div class="relative w-full h-40 bg-slate-200 overflow-hidden">
+                            <img src="${popupImg}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">
+                            <div class="absolute top-3 left-3 bg-[#1a1f2c]/80 backdrop-blur-md text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 shadow-md">
+                                <i class="fa-solid ${catInfo.icon}"></i> ${catInfo.name}
+                            </div>
+                        </div>
+                        <div class="p-5 pb-4">
+                            <h3 class="text-xl font-bold text-slate-800 mb-2.5 leading-tight group-hover:text-indigo-700 transition">${item.name}</h3>
+                            ${item.description ? `<p class="text-[13px] text-slate-500 mb-4 line-clamp-2 leading-relaxed">${item.description}</p>` : ''}
+                            ${item.link ? `
+                            <div class="bg-indigo-50/70 border border-indigo-100 rounded-lg p-3 text-[13px] text-indigo-700 font-medium flex items-center gap-2.5 mb-2 group-hover:bg-indigo-100 transition">
+                                <i class="fa-solid fa-link text-indigo-500"></i> <span class="truncate">Link / 連結</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <div class="border-t border-slate-100 px-5 py-3.5 flex justify-between items-center bg-slate-50/50">
+                            <div class="text-rose-600 text-sm font-bold flex items-center gap-2 group-hover:text-rose-700 transition">
+                                <i class="fa-solid fa-location-dot"></i> ${d.btnShowOnMap}
+                            </div>
+                            <div class="text-slate-400 text-xs font-bold flex items-center gap-1 group-hover:text-indigo-600 transition">
+                                ${d.btnView} <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        // Functions for Footer Buttons
+        function saveProgress(e) {
+            saveDataLocally();
+            if(!e) return;
+            const btn = e.currentTarget;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i> ' + dict[currentLang].msgProgressSaved;
+            btn.classList.add('bg-slate-950');
+            setTimeout(() => { 
+                btn.innerHTML = originalHTML; 
+                btn.classList.remove('bg-slate-950'); 
+            }, 2000);
+        }
+
+        // ==========================================
+        // TRIP INFO & CHECKLIST MODAL LOGIC
+        // ==========================================
+        function openTripInfoModal() {
+            const trip = getCurrentTrip();
+            if (!trip.details) trip.details = { gatherTime: '', checklist: [], notes: '' };
+            
+            document.getElementById('ti-gather-time').value = trip.details.gatherTime || '';
+            document.getElementById('ti-notes').value = trip.details.notes || '';
+            
+            const container = document.getElementById('ti-checklist-container');
+            container.innerHTML = '';
+            
+            if (!trip.details.checklist || trip.details.checklist.length === 0) {
+                addChecklistItem('');
+            } else {
+                trip.details.checklist.forEach(item => addChecklistItem(item));
+            }
+            
+            document.getElementById('trip-info-modal').classList.remove('view-hidden');
+        }
+
+        function closeTripInfoModal() {
+            document.getElementById('trip-info-modal').classList.add('view-hidden');
+        }
+
+        function addChecklistItem(val = '') {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 animate-fade-in';
+            div.innerHTML = `
+                <input type="text" value="${val}" class="checklist-input flex-1 border border-slate-300 px-4 py-2 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition" placeholder="物品名稱 / Item Name">
+                <button type="button" onclick="this.parentElement.remove()" class="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white border border-red-100 transition tooltip shrink-0" title="移除"><i class="fa-solid fa-trash-can text-sm"></i></button>
+            `;
+            document.getElementById('ti-checklist-container').appendChild(div);
+        }
+
+        function saveTripInfo() {
+            const trip = getCurrentTrip();
+            if (!trip.details) trip.details = {};
+            
+            trip.details.gatherTime = document.getElementById('ti-gather-time').value;
+            trip.details.notes = document.getElementById('ti-notes').value;
+            
+            const inputs = document.querySelectorAll('.checklist-input');
+            trip.details.checklist = Array.from(inputs).map(inp => inp.value.trim()).filter(v => v !== '');
+            
+            saveDataLocally();
+            closeTripInfoModal();
+            alert(dict[currentLang].msgProgressSaved);
+        }
+
+        // ==========================================
+        // EXPORT WITH SLIDESHOW FEATURE (Google Earth Style)
+        // ==========================================
+        function exportProject(e) {
+            const trip = getCurrentTrip();
+            if(!trip) return;
+            const tripDataJson = JSON.stringify(trip);
+            const catInfoJson = JSON.stringify(categories);
+            const placeholdersJson = JSON.stringify(placeholderImages);
+            const d = dict[currentLang];
+
+            const htmlContent = `<!DOCTYPE html>
+<html lang="${currentLang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>\${trip.name} | View & Slideshow</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; overflow: hidden; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .custom-marker { display: flex; align-items: center; justify-content: center; border-radius: 50%; color: white; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); border: 2px solid white; font-weight: bold; background-size: cover; background-position: center; transition: transform 0.3s; }
+        .custom-marker:hover, .marker-active { transform: scale(1.4); z-index: 1000 !important; border-color: #fbbf24; }
+        .leaflet-popup-content-wrapper { padding: 0 !important; border-radius: 12px !important; overflow: hidden; }
+        .leaflet-popup-content { margin: 0 !important; width: auto !important; text-align: center; }
+        .leaflet-popup-tip-container { display: none; }
+        
+        /* Slideshow overlay styles */
+        #slideshow-overlay { transition: opacity 0.5s ease; }
+        .slide-hidden { opacity: 0; pointer-events: none; }
+        .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body class="bg-slate-900 h-screen w-screen flex flex-col text-slate-800">
+    <nav class="bg-slate-900 px-6 py-4 flex justify-between items-center text-white shadow-md z-[100] relative shrink-0 border-b border-white/10">
+        <div class="flex items-center gap-4">
+            <div class="w-11 h-11 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg border border-indigo-400/30 text-xl"><i class="fa-solid fa-map-location-dot"></i></div>
+            <div>
+                <h1 class="font-bold text-xl tracking-wide">\${trip.name} <span class="bg-white/10 text-white/90 text-[10px] px-2 py-0.5 rounded border border-white/20 ml-2 align-middle">Read Only / 唯讀模式</span></h1>
+                <p class="text-xs text-indigo-200 mt-0.5"><i class="fa-solid fa-satellite-dish mr-1"></i> \${trip.location} | \${trip.places.length} Nodes</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="startSlideshow()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-4 py-2 rounded-lg font-bold text-sm shadow-lg transition flex items-center gap-2">
+                <i class="fa-solid fa-play"></i> Slide Mode
+            </button>
+        </div>
+    </nav>
+    <div class="flex-1 flex overflow-hidden relative">
+        <aside id="sidebar-panel" class="w-full md:w-[420px] lg:w-[480px] h-full bg-[#f0f2f5] border-r border-slate-200 flex flex-col z-[10] relative shadow-[10px_0_20px_rgba(0,0,0,0.05)] transition-all duration-300">
+            <div class="px-5 py-4 bg-white border-b border-slate-200 z-10 shadow-sm flex justify-between items-center shrink-0">
+                <h2 class="font-black text-slate-700 tracking-wider">Itinerary / 路線一覽</h2>
+                <div class="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-xs font-bold border border-indigo-100"><i class="fa-solid fa-lock text-[10px]"></i></div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5" id="timeline">
+                <!-- Data injected here -->
+            </div>
+        </aside>
+        <main id="map-main" class="hidden md:block flex-1 h-full relative z-0">
+            
+            <!-- Trip Info Top-Left Button -->
+            <button onclick="openReadonlyInfo()" class="absolute top-4 left-4 z-[1000] bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center justify-center hover:bg-slate-50 transition text-indigo-600">
+                <i class="fa-solid fa-clipboard-list text-lg"></i> <span class="ml-2 font-bold text-sm hidden md:block">專案清單與資訊</span>
+            </button>
+
+            <div id="map" class="w-full h-full"></div>
+            
+            <!-- Google Earth Style Slideshow Overlay -->
+            <div id="slideshow-overlay" class="absolute bottom-10 left-1/2 transform -translate-x-1/2 w-11/12 max-w-2xl glass-panel rounded-2xl shadow-2xl z-[2000] flex p-4 slide-hidden items-center gap-5">
+                <img id="slide-img" src="" class="w-32 h-32 rounded-xl object-cover border border-white/20 shadow-inner flex-shrink-0">
+                <div class="flex-1 text-white">
+                    <div class="flex justify-between items-start mb-1">
+                        <span id="slide-cat" class="text-[10px] font-bold tracking-widest uppercase text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">Category</span>
+                        <span id="slide-time" class="text-xs text-slate-300 font-bold bg-white/10 px-2 py-0.5 rounded"><i class="fa-regular fa-clock"></i> 00:00</span>
+                    </div>
+                    <h2 id="slide-name" class="text-2xl font-bold leading-tight mb-2 text-white drop-shadow-md">Node Name</h2>
+                    <p id="slide-desc" class="text-sm text-slate-300 line-clamp-2 leading-relaxed">Description goes here...</p>
+                </div>
+                <div class="flex flex-col gap-2 shrink-0 border-l border-white/10 pl-4">
+                    <button onclick="exitSlideshow()" class="w-10 h-10 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition flex items-center justify-center tooltip" title="Exit">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <button onclick="prevSlide()" class="w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition flex items-center justify-center">
+                        <i class="fa-solid fa-chevron-up"></i>
+                    </button>
+                    <button onclick="nextSlide()" class="w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition flex items-center justify-center">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Readonly Modal for Trip Info -->
+    <div id="ro-info-modal" class="fixed inset-0 z-[4000] slide-hidden glass-panel flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-slate-900 border border-white/20 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 flex justify-between items-center text-white border-b border-white/10 shrink-0">
+                <h3 class="font-bold text-xl flex items-center gap-2 text-indigo-300"><i class="fa-solid fa-clipboard-list"></i> 專案清單與資訊</h3>
+                <button onclick="closeReadonlyInfo()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-6 flex-1 text-slate-300">
+                <div>
+                    <h4 class="text-xs font-bold text-indigo-400 mb-2 uppercase tracking-wider"><i class="fa-regular fa-clock"></i> 集合時間 / Gather Time</h4>
+                    <div class="bg-white/5 px-4 py-3 rounded-xl border border-white/5 font-bold text-white" id="ro-gather-time">未設置</div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold text-indigo-400 mb-2 uppercase tracking-wider"><i class="fa-solid fa-suitcase-rolling"></i> 應帶物品 / Checklist</h4>
+                    <div class="space-y-2" id="ro-checklist">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold text-indigo-400 mb-2 uppercase tracking-wider"><i class="fa-solid fa-circle-exclamation"></i> 注意事項 / Notes</h4>
+                    <div class="bg-white/5 px-4 py-3 rounded-xl border border-white/5 text-sm whitespace-pre-wrap leading-relaxed text-slate-200" id="ro-notes">無注意事項</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const tripData = ${tripDataJson};
+        const catInfo = ${catInfoJson};
+        const placeholderImages = ${placeholdersJson};
+        
+        // Populate Readonly Info Modal
+        document.getElementById('ro-gather-time').innerText = tripData.details?.gatherTime || '未設置 (Not set)';
+        document.getElementById('ro-notes').innerText = tripData.details?.notes || '無注意事項 (None)';
+        const cl = tripData.details?.checklist;
+        if(cl && cl.length > 0) {
+            document.getElementById('ro-checklist').innerHTML = cl.map(item => '<div class="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5 text-white"><i class="fa-solid fa-check text-emerald-400"></i> <span class="text-sm font-medium">' + item + '</span></div>').join('');
+        } else {
+            document.getElementById('ro-checklist').innerHTML = '<div class="text-sm text-slate-500 italic">無項目 (No items)</div>';
+        }
+        
+        function openReadonlyInfo() { document.getElementById('ro-info-modal').classList.remove('slide-hidden'); }
+        function closeReadonlyInfo() { document.getElementById('ro-info-modal').classList.add('slide-hidden'); }
+
+        let map = L.map('map', {zoomControl: false});
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        // Using CartoDB Dark Matter for a more cinematic Earth feel in presentation
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
+        map.setView([tripData.lat, tripData.lng], 13);
+        
+        let html = '';
+        let routeCoords = [];
+        let markerObjects = [];
+        
+        tripData.places.forEach((item, idx) => {
+            const cat = catInfo[item.category] || catInfo.landmark;
+            const img = item.customImage || placeholderImages[item.name.length % placeholderImages.length];
+            const dayNum = item.day.replace('day', '');
+            routeCoords.push([item.lat, item.lng]);
+            
+            html += '<div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer group mb-5" onclick="goToSlide(' + idx + ')">' +
+                '<div class="bg-[#1a1f2c] text-white px-4 py-2.5 flex justify-between items-center">' +
+                    '<div class="flex items-center gap-2 text-rose-400 font-bold text-sm tracking-wide"><i class="fa-solid fa-clock"></i> ' + item.time + '</div>' +
+                    '<div class="bg-white/15 text-white/90 px-2.5 py-1 rounded text-xs font-medium tracking-wider">Day ' + dayNum + '</div>' +
+                '</div>' +
+                '<div class="relative w-full h-40 bg-slate-200 overflow-hidden">' +
+                    '<img src="' + img + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">' +
+                    '<div class="absolute top-3 left-3 bg-[#1a1f2c]/80 backdrop-blur-md text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 shadow-md">' +
+                        '<i class="fa-solid ' + cat.icon + '"></i> ' + cat.name + 
+                    '</div>' +
+                '</div>' +
+                '<div class="p-5 pb-4">' +
+                    '<h3 class="text-xl font-bold text-slate-800 mb-2.5 leading-tight group-hover:text-indigo-700 transition">' + item.name + '</h3>' +
+                '</div>' +
+            '</div>';
+
+            let iconHtml = '';
+            if (item.customImage) {
+                iconHtml = '<div class="custom-marker w-14 h-14 border-[3px] border-white" style="background-image: url(\\'' + item.customImage + '\\');"><div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full ' + cat.color + ' border-2 border-white flex items-center justify-center text-[10px] text-white"><i class="fa-solid ' + cat.icon + '"></i></div></div>';
+            } else {
+                iconHtml = '<div class="custom-marker ' + cat.color + ' w-12 h-12 text-[18px]"><i class="fa-solid ' + cat.icon + '"></i></div>';
+            }
+
+            const customIcon = L.divIcon({ className: 'custom-div-icon marker-node-' + idx, html: iconHtml, iconSize: [56, 56], iconAnchor: [28, 28] });
+            const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(map);
+            markerObjects.push(marker);
+        });
+        
+        document.getElementById('timeline').innerHTML = html || '<div class="text-center py-20 text-slate-400 font-bold">No nodes available.</div>';
+        if(routeCoords.length > 1) { L.polyline(routeCoords, { color: '#4f46e5', weight: 4, opacity: 0.8, dashArray: '8, 8' }).addTo(map); }
+
+        // Slideshow Logic
+        let currentSlide = -1;
+        let isSlideshowActive = false;
+
+        function startSlideshow() {
+            if(tripData.places.length === 0) return;
+            isSlideshowActive = true;
+            document.getElementById('slideshow-overlay').classList.remove('slide-hidden');
+            
+            // HIDE SIDEBAR & expand map
+            document.getElementById('sidebar-panel').style.display = 'none';
+            document.getElementById('map-main').classList.remove('hidden');
+            
+            setTimeout(() => { map.invalidateSize(); }, 300);
+            goToSlide(0);
+        }
+
+        function exitSlideshow() {
+            isSlideshowActive = false;
+            document.getElementById('slideshow-overlay').classList.add('slide-hidden');
+            
+            // SHOW SIDEBAR & restore map layout
+            document.getElementById('sidebar-panel').style.display = 'flex';
+            if (window.innerWidth < 768) {
+                document.getElementById('map-main').classList.add('hidden');
+            }
+            
+            setTimeout(() => { 
+                map.invalidateSize(); 
+                map.setView([tripData.lat, tripData.lng], 13);
+            }, 300);
+        }
+
+        function goToSlide(index) {
+            if(index < 0) index = tripData.places.length - 1;
+            if(index >= tripData.places.length) index = 0;
+            currentSlide = index;
+
+            const item = tripData.places[currentSlide];
+            const cat = catInfo[item.category] || catInfo.landmark;
+            const img = item.customImage || placeholderImages[item.name.length % placeholderImages.length];
+
+            // Update Overlay UI
+            document.getElementById('slide-img').src = img;
+            document.getElementById('slide-name').innerText = item.name;
+            document.getElementById('slide-cat').innerHTML = '<i class="fa-solid ' + cat.icon + '"></i> ' + cat.name;
+            document.getElementById('slide-time').innerHTML = '<i class="fa-regular fa-clock"></i> ' + item.time;
+            document.getElementById('slide-desc').innerText = item.description || 'No description.';
+
+            // Fly to location smoothly (Earth-like feel)
+            map.flyTo([item.lat, item.lng], 16, { animate: true, duration: 1.5 });
+
+            // Ensure overlay is visible if triggered from sidebar click
+            if(!isSlideshowActive) {
+                isSlideshowActive = true;
+                document.getElementById('slideshow-overlay').classList.remove('slide-hidden');
+            }
+        }
+
+        function nextSlide() { goToSlide(currentSlide + 1); }
+        function prevSlide() { goToSlide(currentSlide - 1); }
+
+    <\/script>
+</body>
+</html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `DAB_Export_Slide_\${trip.name.replace(/\s+/g, '_')}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            const btn = e.currentTarget;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-check text-indigo-700"></i> ' + d.msgExportSuccess;
+            setTimeout(() => { btn.innerHTML = originalHTML; }, 2000);
+        }
+
+        function enableAddMode() {
+            isAddingMode = true;
+            document.getElementById('map').classList.add('map-crosshair');
+            document.getElementById('add-toast').classList.remove('view-hidden');
+            if(window.innerWidth < 768) toggleMobileSidebar(); 
+        }
+
+        function cancelAddMode() {
+            isAddingMode = false;
+            document.getElementById('map').classList.remove('map-crosshair');
+            document.getElementById('add-toast').classList.add('view-hidden');
+        }
+
+        function openModalWithCoords(lat, lng) {
+            cancelAddMode();
+            document.getElementById('m-lat').value = lat;
+            document.getElementById('m-lng').value = lng;
+            
+            const trip = getCurrentTrip();
+            const daySelect = document.getElementById('m-day');
+            daySelect.innerHTML = '';
+            for(let i=1; i<=trip.daysCount; i++) {
+                daySelect.innerHTML += `<option value="day${i}">Day ${i}</option>`;
+            }
+
+            if(activeDay !== 'all') document.getElementById('m-day').value = activeDay;
+            if(activeCategory !== 'all') document.getElementById('m-cat').value = activeCategory;
+            
+            document.getElementById('add-modal').classList.remove('view-hidden');
+            document.getElementById('m-img-base64').value = ''; 
+        }
+
+        function closeModal() {
+            document.getElementById('add-modal').classList.add('view-hidden');
+            document.querySelector('#add-modal form').reset();
+        }
+
+        document.getElementById('m-local-img').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 400; 
+                    const MAX_HEIGHT = 400;
+                    let width = img.width, height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    } else {
+                        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                    }
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    document.getElementById('m-img-base64').value = canvas.toDataURL('image/jpeg', 0.7);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function saveNewPlace(e) {
+            e.preventDefault();
+            const newPlace = {
+                id: 'place_' + Date.now(),
+                name: document.getElementById('m-name').value,
+                time: document.getElementById('m-time').value,
+                day: document.getElementById('m-day').value,
+                category: document.getElementById('m-cat').value,
+                customImage: document.getElementById('m-img-base64').value,
+                link: document.getElementById('m-link').value,
+                description: document.getElementById('m-desc').value,
+                lat: parseFloat(document.getElementById('m-lat').value),
+                lng: parseFloat(document.getElementById('m-lng').value)
+            };
+
+            const trip = getCurrentTrip();
+            trip.places.push(newPlace);
+            trip.places.sort((a, b) => a.day === b.day ? a.time.localeCompare(b.time) : a.day.localeCompare(b.day));
+
+            saveDataLocally();
+            closeModal();
+            refreshUI();
+            map.flyTo([newPlace.lat, newPlace.lng], 15);
+        }
+
+        function toggleDesktopSidebar() { 
+            const sb = document.getElementById('sidebar');
+            sb.style.display = sb.style.display === 'none' ? 'flex' : 'none';
+            setTimeout(() => { if(map) map.invalidateSize(); }, 150);
+        }
+
+        function openCreateTripModal() { document.getElementById('create-trip-modal').classList.remove('view-hidden'); }
+        function closeCreateTripModal() { document.getElementById('create-trip-modal').classList.add('view-hidden'); document.querySelector('#create-trip-modal form').reset(); }
+        
+        async function submitNewTrip(e) {
+            e.preventDefault();
+            const name = document.getElementById('nt-name').value, loc = document.getElementById('nt-loc').value, btn = document.getElementById('create-trip-btn');
+            const d = dict[currentLang];
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...'; btn.disabled = true;
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(loc)}`);
+                const data = await res.json();
+                if (!data || data.length === 0) throw new Error(d.alertLocNotFound);
+                
+                tripsData.push({ 
+                    id: 'trip_' + Date.now(), 
+                    name: name, 
+                    location: loc, 
+                    lat: parseFloat(data[0].lat), 
+                    lng: parseFloat(data[0].lon), 
+                    daysCount: 3, 
+                    details: { gatherTime: '', checklist: [], notes: '' },
+                    places: [] 
+                });
+                
+                saveDataLocally(); closeCreateTripModal(); renderDashboard();
+            } catch (err) { alert('Error: ' + err.message); } finally { btn.innerHTML = `<span id="btn-create">${d.btnCreate}</span>`; btn.disabled = false; }
+        }
+
+        function deletePlace(id, e) {
+            if(e) e.stopPropagation();
+            if(confirm(dict[currentLang].alertDeleteNode)) {
+                const trip = getCurrentTrip();
+                trip.places = trip.places.filter(item => item.id !== id);
+                saveDataLocally(); refreshUI(); closeInfoBar(); 
+            }
+        }
+        function deleteCurrentHoverPlace() { if (currentHoverPlaceId) deletePlace(currentHoverPlaceId, null); }
+    </script>
+</body>
+</html>
